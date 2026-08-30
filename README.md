@@ -1,0 +1,120 @@
+# SPARC-Net
+
+Code, data, and results accompanying the paper:
+
+> **SPARC-Net: A Series-Parallel Hybrid, Calibration-Aware Spatial-Attention Architecture
+> for Edge-Oriented PM2.5 Concentration Forecasting**
+
+SPARC-Net combines (i) a learnable, wind-vector-conditioned spatial attention mechanism,
+(ii) a calibration-confidence weighting term applied in log-space to the attention logits, and
+(iii) a series-parallel decomposition in which a fractionally integrated (ARFIMA-style) linear
+model absorbs a local PM2.5 series' autocorrelated structure before the spatial-attention
+network learns only the nonlinear residual.
+
+This repository contains everything needed to reproduce every table and figure in the paper:
+a from-scratch synthetic six-node sensor-network generator, a from-scratch ARFIMA/GPH
+fractional-differencing implementation (no standard Python package ships one), all model
+architectures, the real-data validation pipeline on the Beijing Multi-Site Air-Quality Data Set,
+and the exact saved results used to write the paper.
+
+## Repository layout
+
+```
+sparc-net/
+├── src/                        # Core library code (import these, don't run directly)
+│   ├── data_gen.py             # Synthetic six-node testbed generator (Table A4 parameters)
+│   ├── features.py             # Sliding-window feature construction (synthetic)
+│   ├── arfima.py               # GPH fractional-differencing estimator + causal ARFIMA-style forecaster
+│   ├── models.py                # Keras model definitions: single-node GRU, CNN-BiGRU+hard-NPI,
+│   │                            # spatial-attention network (with/without calibration weighting)
+│   ├── harness.py              # Synthetic-testbed training/eval harness (Table 1)
+│   ├── real_data_pipeline.py   # Beijing dataset loader, station geometry, feature construction
+│   ├── real_features.py        # Sliding-window feature construction (real data)
+│   └── real_harness.py         # Real-data training/eval harness (Table 5, Section 4.7)
+├── scripts/                     # Runnable entry points (chunked so each call trains 1 seed)
+│   ├── run_chunk.py             # Main ablation ladder, synthetic testbed (Table 1) — usage: python run_chunk.py <seed1> <seed2> ...
+│   ├── sweep_chunk.py           # Coupling-strength sensitivity sweep (Table 3) — usage: python sweep_chunk.py <coupling> <seed>
+│   ├── real_run_chunk.py        # Real Beijing-data validation (Table 5) — usage: python real_run_chunk.py <seed> <single_gru|sparc_no_calib>
+│   ├── latency_bench3.py        # Batched-amortized inference latency benchmark (Table 4)
+│   └── make_diagram.py          # Regenerates the architecture diagram (Figure 1)
+├── data/real/                   # Beijing Multi-Site Air-Quality Data Set (12 station CSVs)
+├── results/                     # Saved outputs actually used to write the paper's tables
+│   ├── results_accum.json       # Table 1 raw numbers (8 seeds × 5 models)
+│   ├── errors_accum.npz         # Per-sample test errors (used for Table 2 interval forecasting)
+│   ├── sweep_results.json       # Table 3 raw numbers (5 coupling levels × 3 seeds × 2 models)
+│   ├── real_results.json        # Table 5 raw numbers (6 seeds × 2 models, real data)
+│   └── latency_results.json     # Table 4 raw numbers
+├── figures/architecture_diagram.png   # Figure 1
+├── notebooks/SPARC-Net_Reproduction.ipynb   # Narrated end-to-end walkthrough
+└── requirements.txt
+```
+
+## Quick start
+
+```bash
+pip install -r requirements.txt
+```
+
+Then either open `notebooks/SPARC-Net_Reproduction.ipynb` for a narrated walkthrough with a
+fast demo configuration, or run the paper's exact experiments via the scripts below.
+
+## Reproducing the paper's exact numbers
+
+Each script is intentionally "chunked" to train **one seed at a time** and append its result to
+the corresponding JSON file in `results/`, so a long sweep can be safely resumed if interrupted.
+Already-completed seeds are automatically skipped.
+
+**Table 1 — main ablation ladder (synthetic testbed, 8 seeds):**
+```bash
+cd scripts
+for s in 7 17 27 37 47 57 67 77; do python run_chunk.py $s; done
+```
+
+**Table 3 — coupling-strength sensitivity sweep:**
+```bash
+for c in 0.0 0.5 1.0 2.0 4.0; do
+  for s in 7 17 27; do python sweep_chunk.py $c $s; done
+done
+```
+
+**Table 4 — latency benchmark:**
+```bash
+python latency_bench3.py
+```
+
+**Table 5 — real Beijing PM2.5 validation:**
+```bash
+for s in 7 17 27 37 47 57; do
+  python real_run_chunk.py $s single_gru
+  python real_run_chunk.py $s sparc_no_calib
+done
+```
+
+Statistical tests (Wilcoxon signed-rank, Friedman, Nemenyi post hoc) and Table 2's
+t-location-scale vs. Gaussian interval-forecasting comparison are computed directly from the
+saved `results/*.json` and `results/errors_accum.npz` files — see the notebook for the exact
+code used to produce the numbers quoted in the paper.
+
+## Data sources
+
+- **Synthetic testbed**: generated by `src/data_gen.py` using the literature-grounded parameters
+  listed in the paper's Table A4 (six nodes, 5×5 km grid, AR(1) diurnal process, periodic
+  calibration drift). This is *not* a pre-existing dataset — it is generated fresh from a fixed
+  random seed and is fully reproducible from the code in this repository.
+- **Real-data validation**: the [Beijing Multi-Site Air-Quality Data Set](https://archive.ics.uci.edu/dataset/501/beijing+multi+site+air+quality+data)
+  (Zhang et al., 2017, *Proceedings of the Royal Society A*), obtained from the UCI Machine
+  Learning Repository. The 12 station CSVs are included in `data/real/` for reproducibility;
+  station coordinates (not provided in the original dataset) were compiled from public
+  geographic references and are hard-coded in `src/real_data_pipeline.py`.
+
+## Notes on independent re-implementation
+
+The ARFIMA/fractional-differencing estimator (`src/arfima.py`) is implemented from scratch
+(Geweke–Porter-Hudak log-periodogram regression + causal fractional-differencing/-integration
+filters) because no standard Python package (statsmodels, pmdarima, etc.) ships a ready-made
+ARFIMA estimator. This is disclosed in the paper's Methods section.
+
+## Citation
+
+If you use this code, please cite the accompanying paper (citation details to be added upon
+publication).

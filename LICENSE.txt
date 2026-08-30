@@ -1,0 +1,4 @@
+[License to be added by the author(s) before publishing this repository — e.g., MIT for the
+code. Note: the Beijing Multi-Site Air-Quality Data Set in data/real/ is a third-party dataset
+(Zhang et al., 2017); check the current UCI Machine Learning Repository listing for its license
+terms before redistribution if your chosen code license does not already cover it.]
